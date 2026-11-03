@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Linehaul Flight & ULD Analytics Toolkit</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- SheetJS (xlsx.full.min.js) for parsing Excel files in browser -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Chart.js for data visualization -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Inter Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              900: '#1e3a8a',
+            },
+            sp: {
+              badge: '#059669',
+              bg: '#022c22',
+              border: '#059669'
+            },
+            cargo: {
+              badge: '#d97706',
+              bg: '#451a03',
+              border: '#d97706'
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Custom scrollbars for data tables */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(51, 65, 85, 0.5);
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased bg-slate-950 text-slate-100">
+
+  <!-- Header Navigation -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-brand-600/20 text-brand-500 rounded-lg border border-brand-500/30">
+          <i class="fa-solid fa-plane-departure text-xl"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight tracking-tight text-white flex items-center gap-2">
+            Linehaul ULD & Flight Analytics
+            <span class="text-xs font-normal px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 border border-brand-500/30">v2.4 Engine</span>
+          </h1>
+          <p class="text-xs text-slate-400">Automated SLIC Country Mapping & SP vs Cargo Classification</p>
+        </div>
+      </div>
+      
+      <div class="flex items-center space-x-3">
+        <button id="btnLoadSample" onclick="loadSampleData()" class="px-3.5 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg transition duration-150 flex items-center gap-2">
+          <i class="fa-solid fa-flask text-brand-400"></i> Load Sample Data
+        </button>
+        <button id="btnExportCSV" onclick="exportToCSV()" class="px-3.5 py-1.5 text-xs font-medium bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition duration-150 shadow-lg shadow-brand-600/20 flex items-center gap-2">
+          <i class="fa-solid fa-download"></i> Export Data CSV
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Section 1: File Input & Mappings Config -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      
+      <!-- Excel Dropzone (LH File) -->
+      <div class="lg:col-span-2 glass-card rounded-xl p-5 border border-slate-800 relative group transition hover:border-brand-500/50">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <i class="fa-solid fa-file-excel text-emerald-500"></i> Upload Linehaul Loading Sheet (Testing LH)
+          </h2>
+          <span id="lhFileStatus" class="text-xs text-slate-400 italic">No file loaded</span>
+        </div>
+        
+        <div id="dropZoneLH" class="border-2 border-dashed border-slate-700 hover:border-brand-500 rounded-xl p-6 text-center cursor-pointer transition bg-slate-900/40 flex flex-col items-center justify-center min-h-[120px]" onclick="document.getElementById('inputLH').click()">
+          <input type="file" id="inputLH" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleLHFileUpload(event)">
+          <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-500 mb-2 group-hover:text-brand-400 group-hover:scale-110 transition"></i>
+          <p class="text-sm text-slate-300 font-medium">Click to browse or drop <span class="text-brand-400 font-semibold">Testing LH.xlsx</span> sheet</p>
+          <p class="text-xs text-slate-500 mt-1">Parses Column R (Orig) & Column S (Dest) SLIC codes automatically</p>
+        </div>
+      </div>
+
+      <!-- SLIC Mapping Dropzone / Status -->
+      <div class="glass-card rounded-xl p-5 border border-slate-800 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+              <i class="fa-solid fa-map-location-dot text-amber-500"></i> SLIC Mapping File
+            </h2>
+            <button onclick="toggleSLICModal()" class="text-xs text-brand-400 hover:underline">View Mappings</button>
+          </div>
+          <p class="text-xs text-slate-400 mb-3">Built-in default SLIC lookup loaded. You can upload custom <span class="text-slate-200 font-medium">SLIC.xlsx</span> to extend rules.</p>
+          
+          <div id="dropZoneSLIC" class="border border-dashed border-slate-700 hover:border-amber-500 rounded-lg p-3 text-center cursor-pointer transition bg-slate-900/30 flex items-center justify-center gap-3" onclick="document.getElementById('inputSLIC').click()">
+            <input type="file" id="inputSLIC" accept=".xlsx, .xls, .csv" class="hidden" onchange="handleSLICFileUpload(event)">
+            <i class="fa-solid fa-file-csv text-amber-500 text-lg"></i>
+            <div class="text-left">
+              <span id="slicFileStatus" class="text-xs font-medium text-slate-300 block">Default SLIC Active</span>
+              <span class="text-[10px] text-slate-500 block">Click to override mapping</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-3 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+          <span>Active Rules: <strong id="ruleCountText" class="text-amber-400">14 SLICs</strong></span>
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span> Auto-Detector Ready</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Flight Selector & Summary Stats Header -->
+    <section id="analyticsHeader" class="glass-card rounded-xl p-5 border border-slate-800 space-y-4">
+      <!-- Flight & Date Header Bar -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+        <div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-brand-400">Flight Operational Scope</span>
+          <div class="flex items-center gap-3 mt-1">
+            <h2 id="activeFlightDisplay" class="text-2xl font-bold text-white font-mono">ALL FLIGHTS</h2>
+            <span id="activeDateDisplay" class="px-2.5 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">Date: N/A</span>
+          </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="flex flex-wrap items-center gap-3">
+          <div>
+            <label class="block text-[11px] font-medium text-slate-400 mb-1">Filter Flight No:</label>
+            <select id="flightSelect" onchange="applyFilters()" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-brand-500 outline-none">
+              <option value="ALL">All Flights</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-medium text-slate-400 mb-1">Filter Flight Date:</label>
+            <select id="dateSelect" onchange="applyFilters()" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-3 py-1.5 focus:ring-1 focus:ring-brand-500 outline-none">
+              <option value="ALL">All Dates</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top Metric Cards -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <!-- Total ULDs -->
+        <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/80">
+          <p class="text-[11px] font-medium text-slate-400 uppercase">Total ULDs</p>
+          <p id="statTotalULD" class="text-xl font-bold text-white mt-1 font-mono">0</p>
+          <span class="text-[10px] text-slate-500">Processed units</span>
+        </div>
+
+        <!-- SP ULDs -->
+        <div class="bg-emerald-950/20 rounded-lg p-3 border border-emerald-500/20">
+          <div class="flex items-center justify-between">
+            <p class="text-[11px] font-medium text-emerald-400 uppercase">SP ULDs</p>
+            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+          </div>
+          <p id="statSPULD" class="text-xl font-bold text-emerald-400 mt-1 font-mono">0</p>
+          <span id="statSPPct" class="text-[10px] text-emerald-500/80">0% of total</span>
+        </div>
+
+        <!-- Cargo ULDs -->
+        <div class="bg-amber-950/20 rounded-lg p-3 border border-amber-500/20">
+          <div class="flex items-center justify-between">
+            <p class="text-[11px] font-medium text-amber-400 uppercase">Cargo ULDs</p>
+            <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+          </div>
+          <p id="statCargoULD" class="text-xl font-bold text-amber-400 mt-1 font-mono">0</p>
+          <span id="statCargoPct" class="text-[10px] text-amber-500/80">0% of total</span>
+        </div>
+
+        <!-- Total Net KG -->
+        <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/80">
+          <p class="text-[11px] font-medium text-slate-400 uppercase">Total Net Weight</p>
+          <p id="statNetKG" class="text-xl font-bold text-slate-200 mt-1 font-mono">0 <span class="text-xs text-slate-500 font-normal">KG</span></p>
+          <span class="text-[10px] text-slate-500">Net Payload</span>
+        </div>
+
+        <!-- Total Gross LB -->
+        <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/80">
+          <p class="text-[11px] font-medium text-slate-400 uppercase">Total Gross LB</p>
+          <p id="statGrossLB" class="text-xl font-bold text-slate-200 mt-1 font-mono">0 <span class="text-xs text-slate-500 font-normal">LB</span></p>
+          <span class="text-[10px] text-slate-500">Gross Weight</span>
+        </div>
+
+        <!-- Unique Routes -->
+        <div class="bg-slate-900/80 rounded-lg p-3 border border-slate-800/80">
+          <p class="text-[11px] font-medium text-slate-400 uppercase">Unique Routes</p>
+          <p id="statRoutes" class="text-xl font-bold text-brand-400 mt-1 font-mono">0</p>
+          <span class="text-[10px] text-slate-500">Country pairs</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Overview Matrix & Visualizations -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      
+      <!-- Country Matrix Pivot Table (2 Columns Span) -->
+      <div class="lg:col-span-2 glass-card rounded-xl p-5 border border-slate-800 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                <i class="fa-solid fa-table-cells text-brand-400"></i> Origin Country vs Destination Country Overview Matrix
+              </h3>
+              <p class="text-xs text-slate-400">Cross-tabulation of ULD counts split by SP / Cargo for each lane</p>
+            </div>
+            <span class="text-[10px] px-2 py-1 bg-slate-800 rounded border border-slate-700 text-slate-300 font-mono">Live Aggregation</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table id="matrixTable" class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr id="matrixHeader" class="bg-slate-900/90 text-slate-400 border-b border-slate-800">
+                  <th class="p-2.5 font-semibold">Origin Country</th>
+                  <th class="p-2.5 font-semibold">Type</th>
+                  <!-- Dynamic dest headers populated here -->
+                  <th class="p-2.5 font-semibold text-right">Total</th>
+                </tr>
+              </thead>
+              <tbody id="matrixBody" class="divide-y divide-slate-800/60 text-slate-300">
+                <tr>
+                  <td colspan="5" class="py-8 text-center text-slate-500 italic">No data parsed yet. Please upload an Excel sheet or load sample data.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-slate-800/80 text-[11px] text-slate-400 flex items-center justify-between">
+          <span>* Rule: Column R SLIC starting with 4 digits = <strong class="text-emerald-400">SP</strong>, otherwise = <strong class="text-amber-400">Cargo</strong></span>
+        </div>
+      </div>
+
+      <!-- Charts Section (1 Column Span) -->
+      <div class="glass-card rounded-xl p-5 border border-slate-800 flex flex-col">
+        <h3 class="text-sm font-bold text-white mb-1 flex items-center gap-2">
+          <i class="fa-solid fa-chart-pie text-brand-400"></i> Volume Distribution
+        </h3>
+        <p class="text-xs text-slate-400 mb-4">Breakdown of SP vs Cargo ULD shares</p>
+        
+        <div class="relative flex-1 min-h-[220px] flex items-center justify-center">
+          <canvas id="typeChart"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Detailed ULD Master Table -->
+    <section class="glass-card rounded-xl p-5 border border-slate-800 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h3 class="text-sm font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-boxes-packing text-brand-400"></i> Detailed ULD Inventory Breakdown
+          </h3>
+          <p class="text-xs text-slate-400">Row-level flight loading sheet items with mapped country codes</p>
+        </div>
+
+        <!-- Table Filters -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Search input -->
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-xs text-slate-500"></i>
+            <input type="text" id="searchInput" oninput="applyFilters()" placeholder="Search ULD, SLIC, MAWB..." class="pl-8 pr-3 py-1.5 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-brand-500 w-44 sm:w-56">
+          </div>
+
+          <!-- Volume Type Filter -->
+          <select id="typeFilter" onchange="applyFilters()" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
+            <option value="ALL">All Types (SP & Cargo)</option>
+            <option value="SP">SP Volume Only</option>
+            <option value="Cargo">Cargo Volume Only</option>
+          </select>
+
+          <!-- Origin Filter -->
+          <select id="origFilter" onchange="applyFilters()" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brand-500">
+            <option value="ALL">All Origins</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Table Scrollable Wrapper -->
+      <div class="overflow-x-auto rounded-lg border border-slate-800">
+        <table class="w-full text-left text-xs border-collapse">
+          <thead class="bg-slate-900 text-slate-400 font-semibold border-b border-slate-800">
+            <tr>
+              <th class="p-3">ULD Number</th>
+              <th class="p-3">Volume Type</th>
+              <th class="p-3">Flight No</th>
+              <th class="p-3">Flight Date</th>
+              <th class="p-3">Orig SLIC</th>
+              <th class="p-3">Orig Country</th>
+              <th class="p-3">Dest SLIC</th>
+              <th class="p-3">Dest Country</th>
+              <th class="p-3 font-mono">Net KG</th>
+              <th class="p-3 font-mono">Gross LB</th>
+              <th class="p-3">MAWB / Position</th>
+            </tr>
+          </thead>
+          <tbody id="uldTableBody" class="divide-y divide-slate-800/60 font-sans">
+            <tr>
+              <td colspan="11" class="py-12 text-center text-slate-500">
+                <i class="fa-solid fa-folder-open text-2xl mb-2 block"></i>
+                No data loaded yet. Drop your excel sheet above to start analysis.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Table Footer / Count Info -->
+      <div class="flex items-center justify-between text-xs text-slate-400 pt-2">
+        <span id="rowCountDisplay">Showing 0 entries</span>
+        <span class="text-[11px] text-slate-500">Client-side instant parsing active</span>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Modal: SLIC Mapping Reference -->
+  <div id="slicModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="glass-card max-w-xl w-full rounded-xl border border-slate-800 overflow-hidden shadow-2xl">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-900/60">
+        <h3 class="font-bold text-sm text-white flex items-center gap-2">
+          <i class="fa-solid fa-map-marked-alt text-amber-500"></i> Active SLIC Code to Country Lookup Map
+        </h3>
+        <button onclick="toggleSLICModal()" class="text-slate-400 hover:text-white text-base">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      
+      <div class="p-4 max-h-96 overflow-y-auto">
+        <table class="w-full text-xs text-left">
+          <thead class="bg-slate-900 text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="p-2 font-semibold">SLIC Code</th>
+              <th class="p-2 font-semibold">Mapped Country / Hub</th>
+              <th class="p-2 font-semibold">Classification Pattern</th>
+            </tr>
+          </thead>
+          <tbody id="slicMappingTableBody" class="divide-y divide-slate-800 text-slate-300 font-mono">
+            <!-- Dynamic SLIC list -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="p-3 bg-slate-900/80 border-t border-slate-800 text-right">
+        <button onclick="toggleSLICModal()" class="px-4 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium rounded-md">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Application Logic -->
+  <script>
+    // --- Application State ---
+    let defaultSlicMap = {
+      "0009CNN": "CNN",
+      "5092MYD": "PEN",
+      "5779JPN": "JPY",
+      "8669KRD": "ICN",
+      "8489HKS": "HKG",
+      "8489HKN": "HKG",
+      "6963JPN": "JPY",
+      "8899PHS": "PHS",
+      "8679MYD": "KUL",
+      "8889THT": "BKK",
+      "8009AET": "DWC",
+      "3459DEN": "CGN",
+      "7323QAN": "DOHA",
+      "CRK   N": "CRK",
+      "CRK   G": "CRK"
+    };
+
+    let currentSlicMap = { ...defaultSlicMap };
+    let rawUldData = [];
+    let filteredUldData = [];
+    let chartInstance = null;
+
+    // --- Embedded Sample Data (Derived from Testing LH.xlsx) ---
+    const sampleDataRaw = [
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "111-12345678", pos: "11L", orig: "8889THT", dest: "3459DEN", netKg: 1450, grossLb: 3500, mawb: "615-10293841", remarks: "Express Goods" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "111-12345679", pos: "12R", orig: "8889THT", dest: "3459DEN", netKg: 1200, grossLb: 2900, mawb: "615-10293841", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "111-22334455", pos: "13L", orig: "0009CNN", dest: "3459DEN", netKg: 980, grossLb: 2350, mawb: "615-88392019", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "111-22334456", pos: "14R", orig: "0009CNN", dest: "3459DEN", netKg: 1050, grossLb: 2500, mawb: "615-88392019", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "111-22334457", pos: "15L", orig: "0009CNN", dest: "3459DEN", netKg: 1100, grossLb: 2600, mawb: "615-88392019", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445566", pos: "21L", orig: "CRK   N", dest: "8489HKS", netKg: 3400, grossLb: 7800, mawb: "615-44930291", remarks: "Heavy Cargo" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445567", pos: "22R", orig: "CRK   N", dest: "8489HKS", netKg: 3100, grossLb: 7200, mawb: "615-44930291", remarks: "Freight" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445568", pos: "23L", orig: "CRK   N", dest: "8489HKS", netKg: 2950, grossLb: 6900, mawb: "615-44930291", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445569", pos: "24R", orig: "CRK   N", dest: "8489HKS", netKg: 3600, grossLb: 8100, mawb: "615-44930291", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445570", pos: "25L", orig: "CRK   N", dest: "8489HKS", netKg: 3250, grossLb: 7500, mawb: "615-44930291", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445571", pos: "26R", orig: "CRK   N", dest: "8489HKS", netKg: 2800, grossLb: 6400, mawb: "615-44930291", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445572", pos: "27L", orig: "CRK   N", dest: "8489HKS", netKg: 3000, grossLb: 6800, mawb: "615-44930291", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "222-33445573", pos: "28R", orig: "CRK   N", dest: "8489HKS", netKg: 3150, grossLb: 7100, mawb: "615-44930291", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "333-44556677", pos: "31L", orig: "CRK   G", dest: "8009AET", netKg: 850, grossLb: 1950, mawb: "615-99201948", remarks: "SP Hub feed" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "333-44556678", pos: "32R", orig: "CRK   G", dest: "8489HKS", netKg: 920, grossLb: 2100, mawb: "615-99201948", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "333-44556679", pos: "33L", orig: "CRK   G", dest: "8489HKS", netKg: 1010, grossLb: 2300, mawb: "615-99201948", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "444-55667788", pos: "34R", orig: "8669KRD", dest: "8489HKS", netKg: 1300, grossLb: 3000, mawb: "615-11223344", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "444-55667789", pos: "35L", orig: "8669KRD", dest: "8489HKS", netKg: 1420, grossLb: 3250, mawb: "615-11223344", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "555-66778899", pos: "36R", orig: "6963JPN", dest: "8489HKS", netKg: 1150, grossLb: 2700, mawb: "615-55667788", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "666-77889900", pos: "41L", orig: "5779JPN", dest: "7323QAN", netKg: 780, grossLb: 1800, mawb: "615-99887766", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "666-77889901", pos: "42R", orig: "5779JPN", dest: "8489HKS", netKg: 890, grossLb: 2050, mawb: "615-99887766", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "666-77889902", pos: "43L", orig: "5779JPN", dest: "8489HKS", netKg: 940, grossLb: 2150, mawb: "615-99887766", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "777-88990011", pos: "44R", orig: "8679MYD", dest: "3459DEN", netKg: 1600, grossLb: 3700, mawb: "615-33445566", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "777-88990012", pos: "45L", orig: "8679MYD", dest: "3459DEN", netKg: 1550, grossLb: 3600, mawb: "615-33445566", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "777-88990013", pos: "46R", orig: "8679MYD", dest: "8489HKS", netKg: 1680, grossLb: 3900, mawb: "615-33445566", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "888-99001122", pos: "51L", orig: "5092MYD", dest: "3459DEN", netKg: 1100, grossLb: 2550, mawb: "615-77889900", remarks: "" },
+      { flightNo: "5X001", flightDate: "2026-03-10", uld: "999-00112233", pos: "52R", orig: "8899PHS", dest: "3459DEN", netKg: 1250, grossLb: 2900, mawb: "615-11992288", remarks: "" }
+    ];
+
+    // --- Core Logic: Categorization ---
+    // Rule: If SLIC code starts with a 4-digit number -> "SP", else -> "Cargo"
+    function determineVolumeType(slicCode) {
+      if (!slicCode) return "Cargo";
+      const cleanStr = String(slicCode).trim();
+      if (cleanStr.length >= 4 && /^\d{4}/.test(cleanStr)) {
+        return "SP";
+      }
+      return "Cargo";
+    }
+
+    // Map SLIC Code to Country Name using lookup table
+    function getCountryFromSLIC(slicCode) {
+      if (!slicCode) return "Unknown";
+      const cleanStr = String(slicCode).trim();
+      if (currentSlicMap[cleanStr]) {
+        return currentSlicMap[cleanStr];
+      }
+      // Fallback: check if 4-digit prefix matched
+      for (let key in currentSlicMap) {
+        if (cleanStr.startsWith(key)) {
+          return currentSlicMap[key];
+        }
+      }
+      return cleanStr; // Return code directly if no mapping found
+    }
+
+    // --- Data Processing Engine ---
+    function processParsedData(rawRows) {
+      rawUldData = rawRows.map(row => {
+        // Flexibly locate column keys regardless of slight header variations
+        const uld = row['ULD Number'] || row['ULD'] || row['Container'] || row['ULD No'] || 'N/A';
+        const pos = row['Pos'] || row['Position'] || row['Bay'] || '';
+        const orig = String(row['Orig'] || row['Origin'] || row['SLIC Orig'] || '').trim();
+        const dest = String(row['Dest'] || row['Destination'] || row['SLIC Dest'] || '').trim();
+        const flightNo = row['Flight No'] || row['Flight'] || row['Flight Number'] || '5X-LH';
+        const flightDate = formatDateVal(row['Flight Date'] || row['Date'] || row['Flt Date']);
+        const mawb = row['MAWB Number'] || row['MAWB'] || row['AWB'] || '';
+        const netKg = parseFloat(row['Net KG'] || row['Net Weight'] || row['Weight KG']) || 0;
+        const grossLb = parseFloat(row['Gross LB'] || row['Gross Weight'] || row['Weight LB']) || 0;
+        const remarks = row['Remarks'] || row['Remark'] || '';
+
+        const volumeType = determineVolumeType(orig);
+        const origCountry = getCountryFromSLIC(orig);
+        const destCountry = getCountryFromSLIC(dest);
+
+        return {
+          uld,
+          pos,
+          orig,
+          dest,
+          flightNo,
+          flightDate,
+          mawb,
+          netKg,
+          grossLb,
+          remarks,
+          volumeType,
+          origCountry,
+          destCountry
+        };
+      }).filter(item => item.uld && item.uld !== 'N/A' && item.orig);
+
+      populateFlightAndFilterDropdowns();
+      applyFilters();
+      renderSLICMappingTable();
+    }
+
+    function formatDateVal(val) {
+      if (!val) return 'N/A';
+      if (typeof val === 'number') {
+        // Convert Excel Serial Date
+        const dateObj = XLSX.SSF.parse_date_code(val);
+        if (dateObj) return `${dateObj.y}-${String(dateObj.m).padStart(2,'0')}-${String(dateObj.d).padStart(2,'0')}`;
+      }
+      return String(val).trim();
+    }
+
+    // --- Dropdown Population ---
+    function populateFlightAndFilterDropdowns() {
+      const flightSelect = document.getElementById('flightSelect');
+      const dateSelect = document.getElementById('dateSelect');
+      const origFilter = document.getElementById('origFilter');
+
+      const flights = [...new Set(rawUldData.map(d => d.flightNo))].filter(Boolean);
+      const dates = [...new Set(rawUldData.map(d => d.flightDate))].filter(Boolean);
+      const origins = [...new Set(rawUldData.map(d => d.origCountry))].filter(Boolean).sort();
+
+      flightSelect.innerHTML = '<option value="ALL">All Flights</option>' + flights.map(f => `<option value="${f}">${f}</option>`).join('');
+      dateSelect.innerHTML = '<option value="ALL">All Dates</option>' + dates.map(d => `<option value="${d}">${d}</option>`).join('');
+      origFilter.innerHTML = '<option value="ALL">All Origins</option>' + origins.map(o => `<option value="${o}">${o}</option>`).join('');
+    }
+
+    // --- Filter Execution ---
+    function applyFilters() {
+      const selectedFlight = document.getElementById('flightSelect').value;
+      const selectedDate = document.getElementById('dateSelect').value;
+      const selectedType = document.getElementById('typeFilter').value;
+      const selectedOrig = document.getElementById('origFilter').value;
+      const searchQuery = document.getElementById('searchInput').value.toLowerCase().trim();
+
+      // Filter raw data
+      filteredUldData = rawUldData.filter(item => {
+        if (selectedFlight !== 'ALL' && item.flightNo !== selectedFlight) return false;
+        if (selectedDate !== 'ALL' && item.flightDate !== selectedDate) return false;
+        if (selectedType !== 'ALL' && item.volumeType !== selectedType) return false;
+        if (selectedOrig !== 'ALL' && item.origCountry !== selectedOrig) return false;
+        
+        if (searchQuery) {
+          const matchUld = item.uld.toLowerCase().includes(searchQuery);
+          const matchOrig = item.orig.toLowerCase().includes(searchQuery) || item.origCountry.toLowerCase().includes(searchQuery);
+          const matchDest = item.dest.toLowerCase().includes(searchQuery) || item.destCountry.toLowerCase().includes(searchQuery);
+          const matchMawb = item.mawb.toLowerCase().includes(searchQuery);
+          if (!matchUld && !matchOrig && !matchDest && !matchMawb) return false;
+        }
+        return true;
+      });
+
+      // Update Flight Display Headers
+      document.getElementById('activeFlightDisplay').innerText = selectedFlight === 'ALL' ? 'ALL FLIGHTS' : selectedFlight;
+      document.getElementById('activeDateDisplay').innerText = `Date: ${selectedDate === 'ALL' ? 'Multiple Dates' : selectedDate}`;
+
+      // Refresh UI components
+      updateSummaryCards();
+      renderMatrixTable();
+      renderChart();
+      renderDetailedTable();
+    }
+
+    // --- Summary Cards Update ---
+    function updateSummaryCards() {
+      const totalCount = filteredUldData.length;
+      const spCount = filteredUldData.filter(d => d.volumeType === 'SP').length;
+      const cargoCount = filteredUldData.filter(d => d.volumeType === 'Cargo').length;
+      
+      const totalNetKg = filteredUldData.reduce((sum, d) => sum + d.netKg, 0);
+      const totalGrossLb = filteredUldData.reduce((sum, d) => sum + d.grossLb, 0);
+
+      const uniqueRoutesSet = new Set(filteredUldData.map(d => `${d.origCountry}->${d.destCountry}`));
+
+      const spPct = totalCount > 0 ? ((spCount / totalCount) * 100).toFixed(1) : 0;
+      const cargoPct = totalCount > 0 ? ((cargoCount / totalCount) * 100).toFixed(1) : 0;
+
+      document.getElementById('statTotalULD').innerText = totalCount;
+      document.getElementById('statSPULD').innerText = spCount;
+      document.getElementById('statSPPct').innerText = `${spPct}% of total ULDs`;
+      document.getElementById('statCargoULD').innerText = cargoCount;
+      document.getElementById('statCargoPct').innerText = `${cargoPct}% of total ULDs`;
+      document.getElementById('statNetKG').innerHTML = `${totalNetKg.toLocaleString()} <span class="text-xs text-slate-500 font-normal">KG</span>`;
+      document.getElementById('statGrossLB').innerHTML = `${totalGrossLb.toLocaleString()} <span class="text-xs text-slate-500 font-normal">LB</span>`;
+      document.getElementById('statRoutes').innerText = uniqueRoutesSet.size;
+    }
+
+    // --- Overview Country Matrix Pivoting ---
+    function renderMatrixTable() {
+      const matrixHeader = document.getElementById('matrixHeader');
+      const matrixBody = document.getElementById('matrixBody');
+
+      if (filteredUldData.length === 0) {
+        matrixBody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500 italic">No matching records found for active filters.</td></tr>`;
+        return;
+      }
+
+      // Collect unique Destination Countries
+      const destCountries = [...new Set(filteredUldData.map(d => d.destCountry))].filter(Boolean).sort();
+
+      // Build Header
+      let headerHTML = `<th class="p-2.5 font-semibold bg-slate-900 border-b border-slate-800">Origin Country</th>`;
+      headerHTML += `<th class="p-2.5 font-semibold bg-slate-900 border-b border-slate-800">Type</th>`;
+      destCountries.forEach(dest => {
+        headerHTML += `<th class="p-2.5 font-semibold text-center bg-slate-900 border-b border-slate-800">${dest}</th>`;
+      });
+      headerHTML += `<th class="p-2.5 font-semibold text-right bg-slate-900 border-b border-slate-800">Total ULD</th>`;
+      matrixHeader.innerHTML = headerHTML;
+
+      // Group data by Origin Country and Volume Type
+      const pivotMap = {};
+      filteredUldData.forEach(item => {
+        const key = `${item.origCountry}|||${item.volumeType}`;
+        if (!pivotMap[key]) {
+          pivotMap[key] = { orig: item.origCountry, type: item.volumeType, counts: {}, rowTotal: 0 };
+        }
+        pivotMap[key].counts[item.destCountry] = (pivotMap[key].counts[item.destCountry] || 0) + 1;
+        pivotMap[key].rowTotal += 1;
+      });
+
+      // Convert map to sorted array
+      const pivotRows = Object.values(pivotMap).sort((a, b) => a.orig.localeCompare(b.orig));
+
+      // Render Table Rows
+      let bodyHTML = '';
+      let columnTotals = {};
+      destCountries.forEach(d => columnTotals[d] = 0);
+      let grandTotal = 0;
+
+      pivotRows.forEach(row => {
+        const isSP = row.type === 'SP';
+        const badgeClass = isSP 
+          ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/30' 
+          : 'bg-amber-950/60 text-amber-400 border-amber-500/30';
+
+        bodyHTML += `<tr class="hover:bg-slate-900/40 transition">`;
+        bodyHTML += `<td class="p-2.5 font-bold text-slate-200">${row.orig}</td>`;
+        bodyHTML += `<td class="p-2.5"><span class="px-2 py-0.5 rounded text-[10px] font-medium border ${badgeClass}">${row.type}</span></td>`;
+        
+        destCountries.forEach(dest => {
+          const count = row.counts[dest] || 0;
+          columnTotals[dest] += count;
+          bodyHTML += `<td class="p-2.5 text-center font-mono ${count > 0 ? 'text-slate-100 font-semibold' : 'text-slate-600'}">${count > 0 ? count : '-'}</td>`;
+        });
+
+        grandTotal += row.rowTotal;
+        bodyHTML += `<td class="p-2.5 text-right font-mono font-bold text-brand-400">${row.rowTotal}</td>`;
+        bodyHTML += `</tr>`;
+      });
+
+      // Grand Total Row
+      bodyHTML += `<tr class="bg-slate-900/90 font-bold text-slate-200 border-t-2 border-slate-700">`;
+      bodyHTML += `<td class="p-2.5" colspan="2">TOTAL SUMMARY</td>`;
+      destCountries.forEach(dest => {
+        bodyHTML += `<td class="p-2.5 text-center font-mono text-white">${columnTotals[dest]}</td>`;
+      });
+      bodyHTML += `<td class="p-2.5 text-right font-mono text-emerald-400 text-sm">${grandTotal}</td>`;
+      bodyHTML += `</tr>`;
+
+      matrixBody.innerHTML = bodyHTML;
+    }
+
+    // --- Chart Visualizations ---
+    function renderChart() {
+      const ctx = document.getElementById('typeChart').getContext('2d');
+      const spCount = filteredUldData.filter(d => d.volumeType === 'SP').length;
+      const cargoCount = filteredUldData.filter(d => d.volumeType === 'Cargo').length;
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: ['SP (Small Package)', 'Cargo Volume'],
+          datasets: [{
+            data: [spCount, cargoCount],
+            backgroundColor: ['#10b981', '#f59e0b'],
+            borderColor: '#0f172a',
+            borderWidth: 3,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: { color: '#94a3b8', font: { family: 'Inter', size: 11 } }
+            },
+            tooltip: {
+              callbacks: {
+                label: function(context) {
+                  const val = context.raw || 0;
+                  const total = spCount + cargoCount;
+                  const pct = total > 0 ? ((val / total) * 100).toFixed(1) : 0;
+                  return ` ${context.label}: ${val} ULDs (${pct}%)`;
+                }
+              }
+            }
+          },
+          cutout: '70%'
+        }
+      });
+    }
+
+    // --- Render Detailed Table ---
+    function renderDetailedTable() {
+      const tbody = document.getElementById('uldTableBody');
+      const rowCountDisplay = document.getElementById('rowCountDisplay');
+
+      rowCountDisplay.innerText = `Showing ${filteredUldData.length} of ${rawUldData.length} ULD items`;
+
+      if (filteredUldData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="py-10 text-center text-slate-500 italic">No matching detailed records found.</td></tr>`;
+        return;
+      }
+
+      let html = '';
+      filteredUldData.forEach(row => {
+        const isSP = row.volumeType === 'SP';
+        const badgeClass = isSP 
+          ? 'bg-emerald-950/60 text-emerald-400 border-emerald-500/40' 
+          : 'bg-amber-950/60 text-amber-400 border-amber-500/40';
+
+        html += `<tr class="hover:bg-slate-900/60 transition text-slate-300">`;
+        html += `<td class="p-3 font-mono font-semibold text-white">${row.uld}</td>`;
+        html += `<td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-semibold border ${badgeClass}">${row.volumeType}</span></td>`;
+        html += `<td class="p-3 font-mono text-slate-300">${row.flightNo}</td>`;
+        html += `<td class="p-3 text-slate-400">${row.flightDate}</td>`;
+        html += `<td class="p-3 font-mono text-slate-400">${row.orig}</td>`;
+        html += `<td class="p-3 font-semibold text-slate-200">${row.origCountry}</td>`;
+        html += `<td class="p-3 font-mono text-slate-400">${row.dest}</td>`;
+        html += `<td class="p-3 font-semibold text-slate-200">${row.destCountry}</td>`;
+        html += `<td class="p-3 font-mono text-slate-300">${row.netKg ? row.netKg.toLocaleString() : '-'}</td>`;
+        html += `<td class="p-3 font-mono text-slate-300">${row.grossLb ? row.grossLb.toLocaleString() : '-'}</td>`;
+        html += `<td class="p-3 text-slate-400 text-[11px]">${row.mawb || row.pos || '-'}</td>`;
+        html += `</tr>`;
+      });
+
+      tbody.innerHTML = html;
+    }
+
+    // --- File Parser Handlers ---
+
+    // 1. Linehaul File Upload (Testing LH.xlsx)
+    function handleLHFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      document.getElementById('lhFileStatus').innerText = `Loading: ${file.name}...`;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+          if (jsonData && jsonData.length > 0) {
+            document.getElementById('lhFileStatus').innerText = `Loaded ${file.name} (${jsonData.length} rows)`;
+            document.getElementById('lhFileStatus').className = "text-xs text-emerald-400 font-medium";
+            processParsedData(jsonData);
+          } else {
+            alert("No data found in uploaded Excel sheet.");
+            document.getElementById('lhFileStatus').innerText = "Failed to parse data";
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Error parsing Excel file. Please ensure it is a valid .xlsx or .xls file.");
+          document.getElementById('lhFileStatus').innerText = "Parsing Error";
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // 2. Custom SLIC Mapping File Upload (SLIC.xlsx)
+    function handleSLICFileUpload(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+          let newMappings = 0;
+          jsonData.forEach(row => {
+            const slic = String(row['SLIC'] || row['Code'] || row['SLIC Code'] || '').trim();
+            const country = String(row['Country'] || row['Dest'] || row['Name'] || '').trim();
+            if (slic && country) {
+              currentSlicMap[slic] = country;
+              newMappings++;
+            }
+          });
+
+          document.getElementById('slicFileStatus').innerText = `Custom SLIC Active (+${newMappings} rules)`;
+          document.getElementById('slicFileStatus').className = "text-xs font-semibold text-amber-400 block";
+          document.getElementById('ruleCountText').innerText = `${Object.keys(currentSlicMap).length} SLICs`;
+          
+          // Re-process if LH data exists
+          if (rawUldData.length > 0) {
+            processParsedData(rawUldData);
+          }
+          alert(`Successfully imported ${newMappings} custom SLIC country mappings!`);
+        } catch (err) {
+          console.error(err);
+          alert("Error parsing SLIC master file.");
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // Drag and Drop listeners
+    const dropZoneLH = document.getElementById('dropZoneLH');
+    ['dragenter', 'dragover'].forEach(eventName => {
+      dropZoneLH.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropZoneLH.classList.add('border-brand-500', 'bg-brand-500/10');
+      }, false);
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+      dropZoneLH.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        dropZoneLH.classList.remove('border-brand-500', 'bg-brand-500/10');
+      }, false);
+    });
+    dropZoneLH.addEventListener('drop', (e) => {
+      const dt = e.dataTransfer;
+      const files = dt.files;
+      if (files.length > 0) {
+        document.getElementById('inputLH').files = files;
+        handleLHFileUpload({ target: { files: files } });
+      }
+    });
+
+    // --- Load Sample Data Handler ---
+    function loadSampleData() {
+      document.getElementById('lhFileStatus').innerText = "Sample 'Testing LH.xlsx' Loaded";
+      document.getElementById('lhFileStatus').className = "text-xs text-brand-400 font-medium";
+      processParsedData(sampleDataRaw);
+    }
+
+    // --- SLIC Modal Handler ---
+    function toggleSLICModal() {
+      const modal = document.getElementById('slicModal');
+      modal.classList.toggle('hidden');
+    }
+
+    function renderSLICMappingTable() {
+      const tbody = document.getElementById('slicMappingTableBody');
+      let html = '';
+      for (let slic in currentSlicMap) {
+        const isDigitPattern = /^\d{4}/.test(slic);
+        const classification = isDigitPattern ? '<span class="text-emerald-400 font-medium">SP (Digit rule)</span>' : '<span class="text-amber-400 font-medium">Cargo (Non-digit)</span>';
+        
+        html += `<tr class="hover:bg-slate-900/40">`;
+        html += `<td class="p-2 text-slate-200 font-bold">${slic}</td>`;
+        html += `<td class="p-2 text-slate-300">${currentSlicMap[slic]}</td>`;
+        html += `<td class="p-2">${classification}</td>`;
+        html += `</tr>`;
+      }
+      tbody.innerHTML = html;
+    }
+
+    // --- Export to CSV Handler ---
+    function exportToCSV() {
+      if (filteredUldData.length === 0) {
+        alert("No data available to export.");
+        return;
+      }
+
+      let csv = "ULD Number,Volume Type,Flight No,Flight Date,Orig SLIC,Orig Country,Dest SLIC,Dest Country,Net KG,Gross LB,MAWB / Position,Remarks\n";
+      filteredUldData.forEach(row => {
+        csv += `"${row.uld}","${row.volumeType}","${row.flightNo}","${row.flightDate}","${row.orig}","${row.origCountry}","${row.dest}","${row.destCountry}","${row.netKg}","${row.grossLb}","${row.mawb}","${row.remarks}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `ULD_Analytics_Export_${new Date().toISOString().slice(0,10)}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // --- Initialize Default State on Load ---
+    window.onload = function() {
+      document.getElementById('ruleCountText').innerText = `${Object.keys(currentSlicMap).length} SLICs`;
+      renderSLICMappingTable();
+      // Auto load sample data for immediate visualization
+      loadSampleData();
+    };
+  </script>
+</body>
+</html>
